@@ -7,9 +7,9 @@
   "scripts": {
     "start": "node index.js"
   },
-  "dependencies": {
-    "@hono/node-server": "^2.0.2",
-    "hono": "^4.3.0",
+    "dependencies": {
+    "hono": "^4.6.3",
+    "@hono/node-server": "^1.19.6",
     "playwright": "^1.48.0"
   }
 }
