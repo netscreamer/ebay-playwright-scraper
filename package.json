@@ -1,1 +1,15 @@
-
+{
+  "name": "ebay-playwright-scraper",
+  "version": "1.0.0",
+  "description": "Cloud Playwright scraper for eBay item pages (Leapcell).",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.0.2",
+    "hono": "^4.3.0",
+    "playwright": "^1.48.0"
+  }
+}
