@@ -5,19 +5,19 @@ export function isBotBlock(text) {
   return text.includes("Pardon Our Interruption");
 }
 
-// convert desktop → mobile ebay page
 export function mobileFallback(url) {
+  if (!url.includes("www.ebay.com")) return url;
   return url.replace("www.ebay.com", "m.ebay.com");
 }
 
-// optional Turing test detection
 export function isCaptcha(text) {
   if (!text) return false;
+  const lower = text.toLowerCase();
   const patterns = [
     "verify you are a human",
     "enter the characters",
     "type the text you see",
-    "security verification",
+    "security verification"
   ];
-  return patterns.some((p) => text.toLowerCase().includes(p));
+  return patterns.some((p) => lower.includes(p));
 }
