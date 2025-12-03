@@ -54,21 +54,37 @@ function isPardonOurInterruption(html) {
 
 // --- Bright Data Request --------------------------------------------
 async function fetchViaBrightData(url) {
-  if (!BRIGHTDATA_API_KEY) {
-    throw new Error("BRIGHTDATA_API_KEY not set");
+  if (!BRIGHTDATA_API_KEY) throw new Error("BRIGHTDATA_API_KEY is not set");
+
+  // Bright Data Web Unlocker wants only { zone, url, format } in the JSON body.
+  // Any "product" / "method" flags should live in the target URL query string,
+  // otherwise their validator treats "method" as the HTTP verb and rejects
+  // values like "api" with: `"method" must be one of [GET, POST]`.
+  let targetUrl = url;
+
+  try {
+    const u = new URL(url);
+    if (!u.searchParams.has("product")) {
+      u.searchParams.set("product", "unlocker");
+    }
+    if (!u.searchParams.has("method")) {
+      u.searchParams.set("method", "api");
+    }
+    targetUrl = u.toString();
+  } catch {
+    // If URL parsing somehow fails, fall back to the original URL.
   }
 
-  // Bright Data Web Unlocker: minimal, valid body
   const body = {
     zone: BRIGHTDATA_ZONE,
-    url,
-    format: "raw", // return raw HTML
+    url: targetUrl,
+    format: "raw",
   };
 
   const resp = await fetch("https://api.brightdata.com/request", {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${BRIGHTDATA_API_KEY}`,
+      Authorization: `Bearer ${BRIGHTDATA_API_KEY}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
