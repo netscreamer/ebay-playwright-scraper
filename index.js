@@ -1,31 +1,74 @@
-import express from "express";
+// index.js
 import { chromium } from "playwright";
+import { Hono } from "hono";
+import { serve } from "@hono/node-server";
+import runAntiBotChecks from "./utils/anti_bot.js";
 
-import { pickUserAgent } from "./utils/user_agents.js";
-import {
-  extractPrice,
-  extractSoldCount,
-  cleanTitle,
-  estimateRevenue
-} from "./utils/scrape_helpers.js";
-import { isBotBlock, mobileFallback, isCaptcha } from "./utils/anti_bot.js";
+const USER_AGENTS = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+];
 
-const app = express();
-app.use(express.json());
-
-// Simple health check
-app.get("/", (req, res) => {
-  res.send("eBay Playwright stealth scraper is running.");
-});
-
-async function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function pickUserAgent() {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 }
 
-async function scrapeOne(url) {
+/**
+ * Extracts basic data from an eBay item page.
+ * This is deliberately simple; we can tune selectors later.
+ */
+async function extractEbayData(page) {
+  // Title
+  let title = "";
+  try {
+    const titleLocator = page.locator("h1").first();
+    if (await titleLocator.count()) {
+      title = (await titleLocator.innerText()).trim();
+    } else {
+      title = (await page.title()) || "";
+    }
+  } catch {
+    title = "";
+  }
+
+  // Use full body text for regex matching
+  let text = "";
+  try {
+    text = (await page.textContent("body")) || "";
+  } catch {
+    text = "";
+  }
+
+  // Price: first $xx.xx we see
+  const priceMatch = text.match(/\$([\d,]+\.\d{2})/);
+  const price = priceMatch
+    ? parseFloat(priceMatch[1].replace(/,/g, ""))
+    : null;
+
+  // "123 sold" or "123 sold in last 24 hours"
+  const soldMatch = text.match(/([\d,]+)\s+sold(?! listings)/i);
+  const soldCount = soldMatch
+    ? parseInt(soldMatch[1].replace(/,/g, ""), 10)
+    : null;
+
+  const estimatedRevenue =
+    price !== null && soldCount !== null ? price * soldCount : null;
+
+  return {
+    title,
+    price,
+    currency: price !== null ? "USD" : "",
+    sold_count: soldCount,
+    estimated_revenue: estimatedRevenue
+  };
+}
+
+/**
+ * Scrape a single URL with Playwright.
+ */
+async function scrapeUrl(url) {
   const ua = pickUserAgent();
-  let finalUrl = url;
-  let blocked = false;
 
   const browser = await chromium.launch({
     headless: true,
@@ -34,66 +77,53 @@ async function scrapeOne(url) {
 
   const context = await browser.newContext({
     userAgent: ua,
-    viewport: { width: 1280, height: 720 },
-    locale: "en-US",
-    extraHTTPHeaders: {
-      "Accept-Language": "en-US,en;q=0.9"
-    }
+    viewport: { width: 1280, height: 720 }
+    // NOTE: we can add proxy settings here later (Oxylabs etc.)
   });
 
   const page = await context.newPage();
 
   try {
-    await page.goto(finalUrl, { waitUntil: "networkidle", timeout: 45000 });
+    await page.goto(url, {
+      waitUntil: "networkidle",
+      timeout: 45000
+    });
 
-    let bodyText = (await page.textContent("body")) || "";
-
-    // Try mobile fallback once if we hit "Pardon Our Interruption"
-    if (isBotBlock(bodyText) || isCaptcha(bodyText)) {
-      const mobileUrl = mobileFallback(finalUrl);
-      if (mobileUrl !== finalUrl) {
-        finalUrl = mobileUrl;
-        await sleep(1500 + Math.random() * 1500);
-        await page.goto(finalUrl, { waitUntil: "networkidle", timeout: 45000 });
-        bodyText = (await page.textContent("body")) || "";
-        blocked = isBotBlock(bodyText) || isCaptcha(bodyText);
-      } else {
-        blocked = true;
-      }
+    // Run bot-wall detection
+    const botResult = await runAntiBotChecks(page);
+    if (botResult.blocked) {
+      return {
+        url,
+        title: botResult.reason || "",
+        price: null,
+        currency: "",
+        sold_count: null,
+        estimated_revenue: null,
+        ok: false,
+        blocked: true,
+        error: botResult.reason
+      };
     }
 
-    const rawTitle =
-      (await page.textContent("h1").catch(() => "")) ||
-      (await page.title().catch(() => "")) ||
-      "";
-
-    const title = cleanTitle(rawTitle);
-    const price = extractPrice(bodyText);
-    const soldCount = extractSoldCount(bodyText);
-    const estimatedRevenue = estimateRevenue(price, soldCount);
+    const data = await extractEbayData(page);
 
     return {
       url,
-      final_url: finalUrl,
-      ok: !blocked,
-      blocked,
-      title,
-      price,
-      currency: price != null ? "USD" : "",
-      sold_count: soldCount,
-      estimated_revenue: estimatedRevenue
+      ...data,
+      ok: true,
+      blocked: false
     };
   } catch (err) {
+    console.error("Error scraping", url, err);
     return {
       url,
-      final_url: finalUrl,
-      ok: false,
-      blocked,
       title: "",
       price: null,
       currency: "",
       sold_count: null,
       estimated_revenue: null,
+      ok: false,
+      blocked: false,
       error: String(err)
     };
   } finally {
@@ -101,26 +131,46 @@ async function scrapeOne(url) {
   }
 }
 
-// POST /scrape  { "urls": ["https://www.ebay.com/itm/...", ...] }
-app.post("/scrape", async (req, res) => {
-  const urls = Array.isArray(req.body.urls) ? req.body.urls : [];
+const app = new Hono();
+
+app.get("/", (c) => c.text("eBay Playwright scraper is running."));
+
+app.post("/scrape", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const urls = Array.isArray(body.urls) ? body.urls : [];
+
   if (!urls.length) {
-    return res
-      .status(400)
-      .json({ error: 'Provide JSON body: { "urls": ["https://..."] }' });
+    return c.json(
+      { error: 'Provide JSON body: { "urls": ["https://..."] }' },
+      400
+    );
   }
 
   const results = [];
+
+  // Sequential for now (more stable, less likely to trigger WAF)
   for (const url of urls) {
-    // small random delay between requests (stealth)
-    await sleep(500 + Math.random() * 1000);
-    results.push(await scrapeOne(url));
+    console.log("Scraping:", url);
+    // Filter to /itm/ URLs only – optional but wise
+    if (!url.includes("ebay.com/itm/")) {
+      results.push({
+        url,
+        title: "Skipped (not an item URL)",
+        price: null,
+        currency: "",
+        sold_count: null,
+        estimated_revenue: null,
+        ok: false,
+        blocked: false
+      });
+      continue;
+    }
+    results.push(await scrapeUrl(url));
   }
 
-  res.json({ results });
+  return c.json({ results });
 });
 
-const port = process.env.PORT || 8080;
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-});
+const port = Number(process.env.PORT) || 8080;
+console.log(`Starting eBay Playwright scraper on port ${port}`);
+serve({ fetch: app.fetch, port });
