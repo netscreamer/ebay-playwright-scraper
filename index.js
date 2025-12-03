@@ -69,16 +69,32 @@ async function extractEbayData(page) {
  */
 async function scrapeUrl(url) {
   const ua = pickUserAgent();
+  let browser;
 
-  const browser = await chromium.launch({
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"]
-  });
+  // Try to launch Chromium safely
+  try {
+    browser = await chromium.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"]
+    });
+  } catch (err) {
+    console.error("Failed to launch Chromium:", err);
+    return {
+      url,
+      title: "",
+      price: null,
+      currency: "",
+      sold_count: null,
+      estimated_revenue: null,
+      ok: false,
+      blocked: false,
+      error: "CHROMIUM_LAUNCH_FAILED: " + String(err)
+    };
+  }
 
   const context = await browser.newContext({
     userAgent: ua,
     viewport: { width: 1280, height: 720 }
-    // NOTE: we can add proxy settings here later (Oxylabs etc.)
   });
 
   const page = await context.newPage();
@@ -89,7 +105,6 @@ async function scrapeUrl(url) {
       timeout: 45000
     });
 
-    // Run bot-wall detection
     const botResult = await runAntiBotChecks(page);
     if (botResult.blocked) {
       return {
