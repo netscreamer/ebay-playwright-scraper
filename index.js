@@ -2,7 +2,7 @@
 import { chromium } from "playwright";
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
-import runAntiBotChecks from "./utils/anti_bot.js";
+import runAntiBot from "./utils/anti_bot.js";
 
 const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
