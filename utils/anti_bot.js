@@ -1,23 +1,31 @@
 // utils/anti_bot.js
 
-export function isBotBlock(text) {
-  if (!text) return false;
-  return text.includes("Pardon Our Interruption");
+/**
+ * Very simple bot-wall detection + “Pardon Our Interruption” detector.
+ * Returns { blocked: boolean, reason?: string }
+ */
+export async function runAntiBotChecks(page) {
+  let bodyText = "";
+  try {
+    bodyText = (await page.textContent("body")) || "";
+  } catch {
+    bodyText = "";
+  }
+
+  const lowered = bodyText.toLowerCase();
+
+  if (lowered.includes("pardon our interruption")) {
+    return { blocked: true, reason: "PARDON_OUR_INTERRUPTION" };
+  }
+
+  if (lowered.includes("security measure")
+      || lowered.includes("unusual traffic")
+      || lowered.includes("verify you are a human")) {
+    return { blocked: true, reason: "SECURITY_MEASURE" };
+  }
+
+  return { blocked: false };
 }
 
-export function mobileFallback(url) {
-  if (!url.includes("www.ebay.com")) return url;
-  return url.replace("www.ebay.com", "m.ebay.com");
-}
-
-export function isCaptcha(text) {
-  if (!text) return false;
-  const lower = text.toLowerCase();
-  const patterns = [
-    "verify you are a human",
-    "enter the characters",
-    "type the text you see",
-    "security verification"
-  ];
-  return patterns.some((p) => lower.includes(p));
-}
+// default export so `import runAntiBot from "./utils/anti_bot.js"` also works
+export default runAntiBotChecks;
