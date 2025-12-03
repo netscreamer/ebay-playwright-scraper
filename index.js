@@ -53,16 +53,16 @@ function isPardonOurInterruption(html) {
 }
 
 // --- Bright Data Request --------------------------------------------
-
 async function fetchViaBrightData(url) {
-  if (!BRIGHTDATA_API_KEY) throw new Error("BRIGHTDATA_API_KEY not set");
+  if (!BRIGHTDATA_API_KEY) {
+    throw new Error("BRIGHTDATA_API_KEY not set");
+  }
 
+  // Bright Data Web Unlocker: minimal, valid body
   const body = {
     zone: BRIGHTDATA_ZONE,
     url,
-    product: "unlocker",
-    method: "api",
-    format: "raw",
+    format: "raw", // return raw HTML
   };
 
   const resp = await fetch("https://api.brightdata.com/request", {
