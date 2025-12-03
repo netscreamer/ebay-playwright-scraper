@@ -100,15 +100,14 @@ async function fetchViaBrightData(url) {
   const body = {
     zone: BRIGHTDATA_ZONE,
     url,
-    product: "unlocker",
-    method: "api",
-    format: "raw", // get raw HTML back
+    method: "GET",  // 👈 THIS is what Bright Data expects
+    format: "raw",  // return raw HTML
   };
 
   const resp = await fetch("https://api.brightdata.com/request", {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${BRIGHTDATA_API_KEY}`,
+      Authorization: `Bearer ${BRIGHTDATA_API_KEY}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
@@ -123,6 +122,10 @@ async function fetchViaBrightData(url) {
       )}`
     );
   }
+
+  const html = await resp.text();
+  return html;
+}
 
   // For format: "raw", response body is the target site's HTML.
   const html = await resp.text();
