@@ -1,31 +1,29 @@
 // utils/anti_bot.js
 
-/**
- * Very simple bot-wall detection + “Pardon Our Interruption” detector.
- * Returns { blocked: boolean, reason?: string }
- */
-export async function runAntiBotChecks(page) {
-  let bodyText = "";
-  try {
-    bodyText = (await page.textContent("body")) || "";
-  } catch {
-    bodyText = "";
+// You can rename this however you want; the *default* is what matters
+async function runAntiBot(page) {
+  const text = (await page.textContent("body")) || "";
+
+  // Super simple bot check — you can expand this later
+  if (text.includes("Pardon Our Interruption")) {
+    return {
+      blocked: true,
+      reason: "PARDON_OUR_INTERRUPTION"
+    };
   }
 
-  const lowered = bodyText.toLowerCase();
-
-  if (lowered.includes("pardon our interruption")) {
-    return { blocked: true, reason: "PARDON_OUR_INTERRUPTION" };
+  if (text.includes("To continue, please verify")) {
+    return {
+      blocked: true,
+      reason: "CAPTCHA_OR_VERIFICATION"
+    };
   }
 
-  if (lowered.includes("security measure")
-      || lowered.includes("unusual traffic")
-      || lowered.includes("verify you are a human")) {
-    return { blocked: true, reason: "SECURITY_MEASURE" };
-  }
-
-  return { blocked: false };
+  return {
+    blocked: false,
+    reason: ""
+  };
 }
 
-// default export so `import runAntiBot from "./utils/anti_bot.js"` also works
-export default runAntiBotChecks;
+// *** This is the key line ***
+export default runAntiBot;
